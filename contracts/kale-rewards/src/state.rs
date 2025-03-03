@@ -11,12 +11,16 @@ pub struct Config {
     pub reward_rate: Uint128,
     pub lock_period: u64,
     pub treasury_address: Addr,
+    pub fee_pool: Uint128,
+    pub authorized_contracts: Vec<Addr>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, Default)]
 pub struct StakerInfo {
     pub amount: Uint128,
     pub last_stake_time: u64,
+    pub last_claim_time: u64,
+    pub accumulated_rewards: Uint128,
 }
 
 pub const CONFIG: Item<Config> = Item::new("config");

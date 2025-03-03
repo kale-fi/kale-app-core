@@ -18,6 +18,12 @@ pub enum ContractError {
     #[error("Invalid token")]
     InvalidToken {},
 
+    #[error("Invalid amount")]
+    InvalidAmount {},
+
+    #[error("No rewards to claim")]
+    NoRewards {},
+
     #[error("Invalid reward rate")]
     InvalidRewardRate {},
 
