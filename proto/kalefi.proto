@@ -1,0 +1,27 @@
+syntax = "proto3";
+package kalefi;
+
+option go_package = "github.com/kale-fi/kale-app-core/x/kalefi/types";
+
+// TradeEvent represents a trade that occurred on the platform
+message TradeEvent {
+  string trader = 1;
+  string token_in = 2;
+  string token_out = 3;
+  string amount_in = 4;
+  string amount_out = 5;
+  int64 timestamp = 6;
+}
+
+// TraderProfile represents a trader's profile
+message TraderProfile {
+  string address = 1;
+  repeated string followers = 2;
+  int32 trade_count = 3;
+  string success_rate = 4;
+}
+
+// Services will be defined here
+service KaleFiQuery {
+  // Service definitions will be added later
+}

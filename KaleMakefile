@@ -1,0 +1,7 @@
+.PHONY: build test
+
+build:
+	cargo build && go build ./cmd/kalefid
+
+test:
+	cargo test
