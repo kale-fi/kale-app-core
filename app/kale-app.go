@@ -65,8 +65,13 @@ const (
 	// DefaultChainID is the default chain ID
 	DefaultChainID = "kalefi-1"
 	
-	// DefaultRPCEndpoint is the default RPC endpoint for AWS hosting
-	DefaultRPCEndpoint = "https://kalefi-1-aws-endpoint:26657"
+	// DefaultRPCEndpoint is the default RPC endpoint for Hetzner hosting
+	DefaultRPCEndpoint = "https://kalefi-1-hetzner-endpoint:26657"
+	
+	// Contract paths for CosmWasm contracts
+	AmmContractPath = "contracts/amm"
+	SocialContractPath = "contracts/social"
+	RewardsContractPath = "contracts/rewards"
 )
 
 var (
@@ -140,6 +145,11 @@ type KaleApp struct {
 
 	// module configurator
 	configurator module.Configurator
+	
+	// contract code IDs
+	AmmContractID     uint64
+	SocialContractID  uint64
+	RewardsContractID uint64
 }
 
 // NewKaleApp returns a reference to an initialized KaleApp.
@@ -234,12 +244,26 @@ func NewKaleApp(
 		nil,
 	)
 	
-	// Initialize WasmKeeper
+	// Initialize WasmKeeper with custom message and query handlers for contract integration
 	wasmDir := filepath.Join(homePath, "wasm")
 	wasmConfig, err := wasm.ReadWasmConfig(appOpts)
 	if err != nil {
 		panic(fmt.Sprintf("error while reading wasm config: %s", err))
 	}
+	
+	// Define custom message handlers for the AMM, Social, and Rewards contracts
+	customMessageHandlers := wasmkeeper.NewDefaultMessageHandler(
+		wasmkeeper.NewMessageEncoders(app.cdc),
+		app.BankKeeper,
+		app.StakingKeeper,
+	)
+	
+	// Define custom query handlers for the AMM, Social, and Rewards contracts
+	customQueryHandlers := wasmkeeper.NewDefaultQueryHandler(
+		app.cdc,
+		app.BankKeeper,
+		app.StakingKeeper,
+	)
 	
 	// The last arguments can contain custom message handlers, and custom query handlers,
 	// if we want to allow any custom callbacks
@@ -256,8 +280,8 @@ func NewKaleApp(
 		wasmDir,
 		wasmConfig,
 		supportedFeatures,
-		nil,
-		nil,
+		customMessageHandlers,
+		customQueryHandlers,
 	)
 	
 	// Initialize KaleBankKeeper
@@ -269,7 +293,7 @@ func NewKaleApp(
 		nil,
 	)
 	
-	// Initialize SocialdexKeeper
+	// Initialize SocialdexKeeper with WasmKeeper for contract integration
 	app.SocialdexKeeper = socialdexkeeper.NewKeeper(
 		appCodec,
 		keys[socialdextypes.StoreKey],
@@ -364,6 +388,35 @@ func (app *KaleApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.APICo
 	ModuleBasics.RegisterGRPCGatewayRoutes(clientCtx, apiSvr.GRPCGatewayRouter)
 }
 
+// InitCosmWasmContracts uploads and instantiates the CosmWasm contracts
+func (app *KaleApp) InitCosmWasmContracts(ctx sdk.Context) error {
+	// Upload and instantiate AMM contract
+	ammContractPath := filepath.Join(DefaultNodeHome, AmmContractPath)
+	ammCodeID, err := app.WasmKeeper.Create(ctx, sdk.AccAddress{}, ammContractPath, nil)
+	if err != nil {
+		return fmt.Errorf("failed to upload AMM contract: %w", err)
+	}
+	app.AmmContractID = ammCodeID
+	
+	// Upload and instantiate Social contract
+	socialContractPath := filepath.Join(DefaultNodeHome, SocialContractPath)
+	socialCodeID, err := app.WasmKeeper.Create(ctx, sdk.AccAddress{}, socialContractPath, nil)
+	if err != nil {
+		return fmt.Errorf("failed to upload Social contract: %w", err)
+	}
+	app.SocialContractID = socialCodeID
+	
+	// Upload and instantiate Rewards contract
+	rewardsContractPath := filepath.Join(DefaultNodeHome, RewardsContractPath)
+	rewardsCodeID, err := app.WasmKeeper.Create(ctx, sdk.AccAddress{}, rewardsContractPath, nil)
+	if err != nil {
+		return fmt.Errorf("failed to upload Rewards contract: %w", err)
+	}
+	app.RewardsContractID = rewardsCodeID
+	
+	return nil
+}
+
 // Name returns the name of the App
 func (app *KaleApp) Name() string { return app.BaseApp.Name() }
 
@@ -381,6 +434,12 @@ func (app *KaleApp) EndBlocker(ctx sdk.Context, req abci.RequestEndBlock) abci.R
 func (app *KaleApp) InitChainer(ctx sdk.Context, req abci.RequestInitChain) abci.ResponseInitChain {
 	var genesisState map[string]json.RawMessage
 	app.cdc.MustUnmarshalJSON(req.AppStateBytes, &genesisState)
+	
+	// Initialize CosmWasm contracts after genesis state is applied
+	if err := app.InitCosmWasmContracts(ctx); err != nil {
+		panic(fmt.Sprintf("failed to initialize CosmWasm contracts: %s", err))
+	}
+	
 	return app.mm.InitGenesis(ctx, app.appCodec, genesisState)
 }
 
