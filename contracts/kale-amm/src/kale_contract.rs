@@ -57,11 +57,11 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> StdResult<Response> {
     match msg {
-        ExecuteMsg::Swap {
-            amount_in,
+        ExecuteMsg::KaleSwap {
+            amount,
             token_in,
             token_out,
-        } => execute_swap(deps, env, info, amount_in, token_in, token_out),
+        } => execute_swap(deps, env, info, amount, token_in, token_out),
         // Add other execute functions as needed
     }
 }
@@ -165,6 +165,16 @@ pub fn execute_swap(
     // Check if there's sufficient liquidity
     if reserve_out <= Uint128::zero() {
         return Err(StdError::generic_err("InsufficientLiquidity: Output reserve is zero"));
+    }
+    
+    // Check if there's sufficient liquidity for the swap
+    if reserve_in <= Uint128::zero() {
+        return Err(StdError::generic_err("InsufficientLiquidity: Input reserve is zero"));
+    }
+    
+    // Check if reserve_in is sufficient for the swap
+    if reserve_in < amount_in {
+        return Err(StdError::generic_err("InsufficientLiquidity: Input amount exceeds reserve"));
     }
     
     // Calculate the swap fee (0.2% of amount_in)
