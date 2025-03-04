@@ -1,5 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use cosmwasm_std::Uint128;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -8,6 +9,10 @@ pub struct InstantiateMsg {
     pub yield_percent: u64,
     pub lp_percent: u64,
     pub treasury_percent: u64,
+    pub token_a: String,
+    pub token_b: String,
+    pub reserves_a: Uint128,
+    pub reserves_b: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
