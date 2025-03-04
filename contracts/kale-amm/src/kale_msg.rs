@@ -23,6 +23,12 @@ pub enum ExecuteMsg {
         token_in: String,
         token_out: String,
     },
+    UpdatePoolReserves {
+        token_a: String,
+        token_b: String,
+        reserve_a: Uint128,
+        reserve_b: Uint128,
+    },
     // Add other execute messages as needed
 }
 

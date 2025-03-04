@@ -62,6 +62,12 @@ pub fn execute(
             token_in,
             token_out,
         } => execute_swap(deps, env, info, amount, token_in, token_out),
+        ExecuteMsg::UpdatePoolReserves {
+            token_a,
+            token_b,
+            reserve_a,
+            reserve_b,
+        } => execute_update_pool_reserves(deps, info, token_a, token_b, reserve_a, reserve_b),
         // Add other execute functions as needed
     }
 }
@@ -135,6 +141,44 @@ fn split_fee(
     Ok(messages)
 }
 
+pub fn execute_update_pool_reserves(
+    deps: DepsMut,
+    _info: MessageInfo,
+    token_a: String,
+    token_b: String,
+    reserve_a: Uint128,
+    reserve_b: Uint128,
+) -> StdResult<Response> {
+    // Sort tokens to ensure consistent pool key
+    let pool_key = if token_a < token_b {
+        (token_a.as_str(), token_b.as_str())
+    } else {
+        (token_b.as_str(), token_a.as_str())
+    };
+    
+    // Load the pool
+    let mut pool = POOLS.load(deps.storage, pool_key)?;
+    
+    // Update the reserves
+    if token_a == pool.token_a {
+        pool.reserve_a = reserve_a;
+        pool.reserve_b = reserve_b;
+    } else {
+        pool.reserve_a = reserve_b;
+        pool.reserve_b = reserve_a;
+    }
+    
+    // Save the updated pool
+    POOLS.save(deps.storage, pool_key, &pool)?;
+    
+    Ok(Response::new()
+        .add_attribute("method", "update_pool_reserves")
+        .add_attribute("token_a", pool.token_a)
+        .add_attribute("token_b", pool.token_b)
+        .add_attribute("reserve_a", pool.reserve_a.to_string())
+        .add_attribute("reserve_b", pool.reserve_b.to_string()))
+}
+
 pub fn execute_swap(
     deps: DepsMut,
     _env: Env,
@@ -187,6 +231,13 @@ pub fn execute_swap(
     // Calculate the amount out using the XYK formula
     let amount_out = calculate_xyk(reserve_in, reserve_out, amount_in_after_fee)?;
     
+    // Add debug attributes to log values before subtraction
+    let debug_attributes = vec![
+        attr("debug_reserve_in", reserve_in.to_string()),
+        attr("debug_reserve_out", reserve_out.to_string()),
+        attr("debug_amount_out", amount_out.to_string()),
+    ];
+    
     // Check if there's sufficient liquidity for the swap
     if amount_out > reserve_out {
         return Err(StdError::generic_err("InsufficientLiquidity: Not enough tokens in reserve"));
@@ -208,12 +259,27 @@ pub fn execute_swap(
     )?;
     
     // Update the pool reserves
+    // Only update if reserve_out >= amount_out
     if token_in == pool.token_a {
+        // Add amount_in to reserve_in
         pool.reserve_a = pool.reserve_a.checked_add(amount_in_after_fee)?;
-        pool.reserve_b = pool.reserve_b.checked_sub(amount_out)?;
+        
+        // Subtract amount_out from reserve_out only if reserve_out >= amount_out
+        if pool.reserve_b >= amount_out {
+            pool.reserve_b = pool.reserve_b.checked_sub(amount_out)?;
+        } else {
+            return Err(StdError::generic_err("InsufficientLiquidity: Output reserve is less than amount out"));
+        }
     } else {
+        // Add amount_in to reserve_in
         pool.reserve_b = pool.reserve_b.checked_add(amount_in_after_fee)?;
-        pool.reserve_a = pool.reserve_a.checked_sub(amount_out)?;
+        
+        // Subtract amount_out from reserve_out only if reserve_out >= amount_out
+        if pool.reserve_a >= amount_out {
+            pool.reserve_a = pool.reserve_a.checked_sub(amount_out)?;
+        } else {
+            return Err(StdError::generic_err("InsufficientLiquidity: Output reserve is less than amount out"));
+        }
     }
     
     // Save the updated pool
@@ -243,7 +309,8 @@ pub fn execute_swap(
             attr("amount_in", amount_in.to_string()),
             attr("amount_out", amount_out.to_string()),
             attr("fee", fee.to_string()),
-        ]))
+        ])
+        .add_attributes(debug_attributes))
 }
 
 pub fn query(_deps: Deps, _env: Env, _msg: QueryMsg) -> StdResult<Binary> {
