@@ -6,6 +6,8 @@ use cosmwasm_std::{
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, StakerInfoResponse};
 use crate::state::{Config, StakerInfo, CONFIG, STAKERS, TOTAL_STAKED};
+use crate::kale_state::{Pool, Staker, POOL};
+use crate::kale_msg::{PoolResponse, TotalStakedResponse};
 
 // Constants for APY calculation
 const MIN_APY: u64 = 8;  // 8% minimum APY
@@ -64,6 +66,23 @@ pub fn execute_stake(
     total += amount;
     TOTAL_STAKED.save(deps.storage, &total)?;
     
+    // Also update the kale_state Staker if it exists
+    let kale_staker = Staker {
+        address: staker_addr.clone(),
+        staked_amount: staker.amount,
+        staked_since: staker.last_stake_time,
+        last_claim_time: staker.last_claim_time,
+        accumulated_rewards: staker.accumulated_rewards,
+    };
+    
+    // Update the pool in kale_state
+    let mut pool = POOL.may_load(deps.storage)?.unwrap_or_else(|| Pool {
+        usdc: Uint128::zero(),
+        kale: Uint128::zero(),
+    });
+    pool.kale += amount;
+    POOL.save(deps.storage, &pool)?;
+    
     Ok(Response::new()
         .add_attribute("method", "stake")
         .add_attribute("staker", info.sender)
@@ -112,6 +131,11 @@ pub fn execute_unstake(
     total -= amount;
     TOTAL_STAKED.save(deps.storage, &total)?;
     
+    // Update the pool in kale_state
+    let mut pool = POOL.load(deps.storage)?;
+    pool.kale -= amount;
+    POOL.save(deps.storage, &pool)?;
+    
     // Send tokens back to staker
     let msg = BankMsg::Send {
         to_address: info.sender.to_string(),
@@ -159,6 +183,11 @@ pub fn execute_claim(
     staker.accumulated_rewards = Uint128::zero();
     staker.last_claim_time = env.block.time.seconds();
     STAKERS.save(deps.storage, &staker_addr, &staker)?;
+    
+    // Update the pool in kale_state
+    let mut pool = POOL.load(deps.storage)?;
+    pool.usdc = pool.usdc.checked_sub(total_rewards).unwrap_or_default();
+    POOL.save(deps.storage, &pool)?;
     
     // Send rewards to staker
     let msg = BankMsg::Send {
@@ -247,6 +276,11 @@ pub fn add_fee_to_pool(
     let mut config = CONFIG.load(deps.storage)?;
     config.fee_pool += amount;
     CONFIG.save(deps.storage, &config)?;
+    
+    // Update the pool in kale_state
+    let mut pool = POOL.load(deps.storage)?;
+    pool.usdc += amount;
+    POOL.save(deps.storage, &pool)?;
     
     Ok(Response::new()
         .add_attribute("method", "add_fee_to_pool")

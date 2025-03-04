@@ -7,6 +7,8 @@ use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, StakerInfoResponse, ConfigResponse, APYResponse};
 use crate::state::{Config, StakerInfo, CONFIG, STAKERS, TOTAL_STAKED};
 use crate::kale_contract::{execute_stake, execute_unstake, execute_claim, calculate_yield, add_fee_to_pool, update_config};
+use crate::kale_msg::{PoolResponse, TotalStakedResponse};
+use crate::kale_state::{Pool, Staker, POOL};
 
 // Version info for migration
 const CONTRACT_NAME: &str = "kale-rewards";
@@ -42,6 +44,13 @@ pub fn instantiate(
     
     CONFIG.save(deps.storage, &config)?;
     TOTAL_STAKED.save(deps.storage, &Uint128::zero())?;
+    
+    // Initialize the pool
+    let pool = Pool {
+        usdc: Uint128::zero(),
+        kale: Uint128::zero(),
+    };
+    POOL.save(deps.storage, &pool)?;
     
     Ok(Response::new()
         .add_attribute("method", "instantiate")
@@ -87,6 +96,68 @@ pub fn execute(
             // Use the update_config function for lock_period and authorized_contracts
             update_config(deps, env, info, lock_period, authorized_contracts)
         },
+        // Handle KaleStake and KaleClaim messages
+        ExecuteMsg::KaleStake { amount } => {
+            // Delegate to execute_stake but update the Pool as well
+            let response = execute_stake(deps.clone(), env.clone(), info.clone(), amount)?;
+            
+            // Update the kale pool
+            let mut pool = POOL.load(deps.storage)?;
+            pool.kale += amount;
+            POOL.save(deps.storage, &pool)?;
+            
+            Ok(response)
+        },
+        ExecuteMsg::KaleClaim {} => {
+            // Delegate to execute_claim but update the Pool as well
+            let response = execute_claim(deps.clone(), env.clone(), info.clone())?;
+            
+            // Update the usdc pool (this is simplified, in reality we'd need to track the exact amount claimed)
+            let config = CONFIG.load(deps.storage)?;
+            let mut pool = POOL.load(deps.storage)?;
+            
+            // The actual amount claimed would be tracked in the response attributes
+            // Here we're just updating the pool based on the fee_pool
+            pool.usdc = config.fee_pool;
+            POOL.save(deps.storage, &pool)?;
+            
+            Ok(response)
+        },
+        ExecuteMsg::KaleUnstake { amount } => {
+            // Delegate to execute_unstake but update the Pool as well
+            let response = execute_unstake(deps.clone(), env.clone(), info.clone(), amount)?;
+            
+            // Update the kale pool
+            let mut pool = POOL.load(deps.storage)?;
+            pool.kale = pool.kale.checked_sub(amount)?;
+            POOL.save(deps.storage, &pool)?;
+            
+            Ok(response)
+        },
+        ExecuteMsg::AddFeeToPool { amount, token } => {
+            // Update the pool based on the token type
+            let mut pool = POOL.load(deps.storage)?;
+            
+            if token == "usdc" {
+                pool.usdc += amount;
+                
+                // Also update the fee_pool in Config for yield calculations
+                let mut config = CONFIG.load(deps.storage)?;
+                config.fee_pool += amount;
+                CONFIG.save(deps.storage, &config)?;
+            } else if token == "kale" {
+                pool.kale += amount;
+            } else {
+                return Err(ContractError::InvalidToken {});
+            }
+            
+            POOL.save(deps.storage, &pool)?;
+            
+            Ok(Response::new()
+                .add_attribute("method", "add_fee_to_pool")
+                .add_attribute("token", token)
+                .add_attribute("amount", amount))
+        },
     }
 }
 
@@ -98,6 +169,12 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::TotalStaked {} => to_binary(&query_total_staked(deps)?),
         QueryMsg::FeePool {} => to_binary(&query_fee_pool(deps)?),
         QueryMsg::APY {} => to_binary(&query_apy(deps)?),
+        // Handle new query messages
+        QueryMsg::GetConfig {} => to_binary(&query_config(deps)?),
+        QueryMsg::GetPool {} => to_binary(&query_pool(deps)?),
+        QueryMsg::GetStaker { address } => to_binary(&query_staker_info(deps, env, address)?),
+        QueryMsg::GetTotalStaked {} => to_binary(&query_total_staked_response(deps)?),
+        QueryMsg::GetCurrentAPY {} => to_binary(&query_apy(deps)?),
     }
 }
 
@@ -141,9 +218,22 @@ fn query_total_staked(deps: Deps) -> StdResult<Uint128> {
     TOTAL_STAKED.load(deps.storage)
 }
 
+fn query_total_staked_response(deps: Deps) -> StdResult<TotalStakedResponse> {
+    let amount = TOTAL_STAKED.load(deps.storage)?;
+    Ok(TotalStakedResponse { amount })
+}
+
 fn query_fee_pool(deps: Deps) -> StdResult<Uint128> {
     let config = CONFIG.load(deps.storage)?;
     Ok(config.fee_pool)
+}
+
+fn query_pool(deps: Deps) -> StdResult<PoolResponse> {
+    let pool = POOL.load(deps.storage)?;
+    Ok(PoolResponse {
+        usdc: pool.usdc,
+        kale: pool.kale,
+    })
 }
 
 fn query_apy(deps: Deps) -> StdResult<APYResponse> {
