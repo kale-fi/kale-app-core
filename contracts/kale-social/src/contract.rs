@@ -3,7 +3,7 @@ use cosmwasm_std::{
     Uint128, BankMsg, Coin, CosmosMsg, StdError,
 };
 
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, TradeInfo, TraderResponse};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, TradeInfo, TraderResponse, TraderProfileResponse};
 use crate::state::{Config, CONFIG, TRADER_PROFILES, TraderProfile, Follower};
 
 pub fn instantiate(
@@ -189,7 +189,12 @@ fn query_trader_profile(deps: Deps, address: String) -> StdResult<Binary> {
             performance: Uint128::zero(),
         });
     
-    to_json_binary(&profile)
+    // Wrap the profile in a TraderProfileResponse
+    let response = TraderProfileResponse {
+        profile,
+    };
+    
+    to_json_binary(&response)
 }
 
 fn query_trader(deps: Deps, address: String) -> StdResult<Binary> {
