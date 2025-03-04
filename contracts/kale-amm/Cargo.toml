@@ -1,0 +1,33 @@
+[package]
+name = "kale-amm"
+version = "0.1.0"
+edition = "2021"
+description = "KaleFi AMM contract for token swaps with 0.2% fee"
+license = "Apache-2.0"
+repository = "https://github.com/kale-fi/kale-app-core"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cosmwasm-std = "1.5.0"
+cosmwasm-schema = "1.5.0"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+cw-storage-plus = "1.1.0"
+
+[dev-dependencies]
+cw-multi-test = "0.17.0"
+
+[profile.release]
+opt-level = 3
+debug = false
+rpath = false
+lto = true
+debug-assertions = false
+codegen-units = 1
+panic = 'abort'
+incremental = false
+overflow-checks = true
