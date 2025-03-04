@@ -1,11 +1,12 @@
+use cosmwasm_std::Uint128;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use cosmwasm_std::Uint128;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct InstantiateMsg {
     pub owner: String,
-    pub fee_percent: u64,
+    pub fee_percent: u64,  // Fee in basis points (e.g., 2 = 0.2%)
+    pub fee_threshold: Uint128,  // Threshold for fee distribution
     pub yield_percent: u64,
     pub lp_percent: u64,
     pub treasury_percent: u64,
@@ -19,21 +20,19 @@ pub struct InstantiateMsg {
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
     KaleSwap {
-        amount: u128,
+        amount: Uint128,
         token_in: String,
         token_out: String,
     },
-    UpdatePoolReserves {
-        token_a: String,
-        token_b: String,
-        reserve_a: Uint128,
-        reserve_b: Uint128,
+    DistributeAccumulatedFees {
+        denom: String,
     },
-    // Add other execute messages as needed
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
-    // Add query messages as needed
+    GetAccumulatedFees {
+        denom: String,
+    },
 }

@@ -11,6 +11,8 @@ pub struct Config {
     pub yield_percent: u64,
     pub lp_percent: u64,
     pub treasury_percent: u64,
+    pub fee_threshold: Uint128,  // Threshold for fee distribution
+
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -24,3 +26,4 @@ pub struct Pool {
 
 pub const CONFIG: Item<Config> = Item::new("config");
 pub const POOLS: Map<(&str, &str), Pool> = Map::new("pools");
+pub const FEE_ACCUMULATORS: Map<&str, Uint128> = Map::new("fee_accumulators");
