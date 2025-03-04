@@ -4,7 +4,7 @@ use cosmwasm_std::{
 };
 
 use crate::kale_msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::kale_state::{Config, CONFIG, POOLS};
+use crate::kale_state::{Config, Pool, CONFIG, POOLS};
 
 pub fn instantiate(
     deps: DepsMut,
@@ -12,6 +12,7 @@ pub fn instantiate(
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
+    // Save config
     let config = Config {
         owner: deps.api.addr_validate(&msg.owner)?,
         fee_percent: msg.fee_percent,
@@ -21,7 +22,32 @@ pub fn instantiate(
     };
     CONFIG.save(deps.storage, &config)?;
 
-    Ok(Response::new().add_attribute("method", "instantiate"))
+    // Initialize the pool with the tokens and reserves from InstantiateMsg
+    // Sort tokens to ensure consistent pool key
+    let (token_a, token_b, reserve_a, reserve_b) = if msg.token_a < msg.token_b {
+        (msg.token_a, msg.token_b, msg.reserves_a, msg.reserves_b)
+    } else {
+        (msg.token_b, msg.token_a, msg.reserves_b, msg.reserves_a)
+    };
+
+    // Create and save the pool
+    let pool = Pool {
+        token_a,
+        token_b,
+        reserve_a,
+        reserve_b,
+        lp_token_supply: Uint128::zero(), // Initialize LP token supply to zero for now
+    };
+
+    // Save the pool using the token pair as the key
+    POOLS.save(deps.storage, (pool.token_a.as_str(), pool.token_b.as_str()), &pool)?;
+
+    Ok(Response::new()
+        .add_attribute("method", "instantiate")
+        .add_attribute("token_a", pool.token_a)
+        .add_attribute("token_b", pool.token_b)
+        .add_attribute("reserve_a", pool.reserve_a.to_string())
+        .add_attribute("reserve_b", pool.reserve_b.to_string()))
 }
 
 pub fn execute(
@@ -136,6 +162,11 @@ pub fn execute_swap(
         (pool.reserve_b, pool.reserve_a)
     };
     
+    // Check if there's sufficient liquidity
+    if reserve_out <= Uint128::zero() {
+        return Err(StdError::generic_err("InsufficientLiquidity: Output reserve is zero"));
+    }
+    
     // Calculate the swap fee (0.2% of amount_in)
     let fee_rate = Uint128::new(2); // 0.2% = 2/1000
     let fee = amount_in.multiply_ratio(fee_rate, Uint128::new(1000));
@@ -145,6 +176,11 @@ pub fn execute_swap(
     
     // Calculate the amount out using the XYK formula
     let amount_out = calculate_xyk(reserve_in, reserve_out, amount_in_after_fee)?;
+    
+    // Check if there's sufficient liquidity for the swap
+    if amount_out > reserve_out {
+        return Err(StdError::generic_err("InsufficientLiquidity: Not enough tokens in reserve"));
+    }
     
     // Split the fee (50% yield, 30% LP, 20% Treasury)
     // For this example, we'll use placeholder addresses
