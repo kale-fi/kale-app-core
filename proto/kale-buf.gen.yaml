@@ -1,0 +1,28 @@
+version: v1
+plugins:
+  # Go plugins
+  - name: go
+    out: ../x/kalefi/types
+    opt:
+      - paths=source_relative
+  - name: go-grpc
+    out: ../x/kalefi/types
+    opt:
+      - paths=source_relative
+      - require_unimplemented_servers=false
+  
+  # Generate gRPC gateway code
+  - name: grpc-gateway
+    out: ../x/kalefi/types
+    opt:
+      - paths=source_relative
+      - logtostderr=true
+      - generate_unbound_methods=true
+  
+  # Generate swagger documentation
+  - name: swagger
+    out: ../docs/swagger
+    opt:
+      - logtostderr=true
+      - fqn_for_swagger_name=true
+      - simple_operation_ids=true

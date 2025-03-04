@@ -13,6 +13,12 @@ message TradeEvent {
   int64 timestamp = 6;
 }
 
+// KaleTradeEvent represents a simplified trade event
+message KaleTradeEvent {
+  string trader = 1;
+  uint64 amount = 2;
+}
+
 // TraderProfile represents a trader's profile
 message TraderProfile {
   string address = 1;
@@ -21,7 +27,24 @@ message TraderProfile {
   string success_rate = 4;
 }
 
-// Services will be defined here
+// Request to get trade events
+message GetEventsRequest {
+  string trader_address = 1;
+  int32 limit = 2;
+}
+
+// Response containing trade events
+message GetEventsResponse {
+  repeated KaleTradeEvent events = 1;
+}
+
+// KaleService provides methods to interact with the KaleFi platform
+service KaleService {
+  // GetEvents retrieves trade events for a specific trader
+  rpc GetEvents(GetEventsRequest) returns (GetEventsResponse) {}
+}
+
+// Legacy service definition
 service KaleFiQuery {
   // Service definitions will be added later
 }
