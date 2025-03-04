@@ -1,0 +1,144 @@
+version: '3'
+
+services:
+  kalefi-validator-1:
+    image: kalefid:latest
+    container_name: kalefi-validator-1
+    restart: always
+    ports:
+      - "26657:26657"
+      - "26656:26656"
+      - "1317:1317"
+    volumes:
+      - kalefi_data_1:/root/.kalefid
+    environment:
+      - MONIKER=validator-1
+      - CHAIN_ID=kalefi-1
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    command: start --home /root/.kalefid --pruning=nothing --log_level info
+
+  kalefi-validator-2:
+    image: kalefid:latest
+    container_name: kalefi-validator-2
+    restart: always
+    ports:
+      - "26667:26657"
+      - "26666:26656"
+      - "1318:1317"
+    volumes:
+      - kalefi_data_2:/root/.kalefid
+    environment:
+      - MONIKER=validator-2
+      - CHAIN_ID=kalefi-1
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    command: start --home /root/.kalefid --pruning=nothing --log_level info
+
+  kalefi-validator-3:
+    image: kalefid:latest
+    container_name: kalefi-validator-3
+    restart: always
+    ports:
+      - "26677:26657"
+      - "26676:26656"
+      - "1319:1317"
+    volumes:
+      - kalefi_data_3:/root/.kalefid
+    environment:
+      - MONIKER=validator-3
+      - CHAIN_ID=kalefi-1
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    command: start --home /root/.kalefid --pruning=nothing --log_level info
+
+  kalefi-validator-4:
+    image: kalefid:latest
+    container_name: kalefi-validator-4
+    restart: always
+    ports:
+      - "26687:26657"
+      - "26686:26656"
+      - "1320:1317"
+    volumes:
+      - kalefi_data_4:/root/.kalefid
+    environment:
+      - MONIKER=validator-4
+      - CHAIN_ID=kalefi-1
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    command: start --home /root/.kalefid --pruning=nothing --log_level info
+
+  kalefi-validator-5:
+    image: kalefid:latest
+    container_name: kalefi-validator-5
+    restart: always
+    ports:
+      - "26697:26657"
+      - "26696:26656"
+      - "1321:1317"
+    volumes:
+      - kalefi_data_5:/root/.kalefid
+    environment:
+      - MONIKER=validator-5
+      - CHAIN_ID=kalefi-1
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    command: start --home /root/.kalefid --pruning=nothing --log_level info
+
+volumes:
+  kalefi_data_1:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/kalefi/validator-1
+  kalefi_data_2:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/kalefi/validator-2
+  kalefi_data_3:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/kalefi/validator-3
+  kalefi_data_4:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/kalefi/validator-4
+  kalefi_data_5:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/kalefi/validator-5
