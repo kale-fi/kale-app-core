@@ -18,8 +18,8 @@ pub struct InstantiateMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    Swap {
-        amount_in: u128,
+    KaleSwap {
+        amount: u128,
         token_in: String,
         token_out: String,
     },
