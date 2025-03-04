@@ -1,9 +1,9 @@
 use cosmwasm_std::{
     to_json_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult,
-    Uint128, BankMsg, Coin, CosmosMsg, StdError, Addr, attr,
+    Uint128, BankMsg, Coin, CosmosMsg, StdError,
 };
 
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, TradeMsg, TraderResponse};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, TradeMsg, TraderProfileResponse};
 use crate::state::{Config, CONFIG, TRADER_PROFILES, TraderProfile, Follower};
 
 pub fn instantiate(
@@ -52,14 +52,6 @@ pub fn execute(
                 token_out: trade_info.token_pair.split('/').last().unwrap_or("").to_string(),
             };
             execute_copy_trade(deps, env, info, trader, trade)
-        },
-        ExecuteMsg::UpdateProfile { bio, avatar_url } => {
-            // Implementation for updating profile
-            Ok(Response::new().add_attribute("method", "update_profile"))
-        },
-        ExecuteMsg::Unfollow { trader } => {
-            // Implementation for unfollowing
-            Ok(Response::new().add_attribute("method", "unfollow"))
         },
     }
 }
@@ -203,12 +195,9 @@ fn query_trader_profile(deps: Deps, address: String) -> StdResult<Binary> {
             followers: vec![],
         });
     
-    // Convert to TraderResponse
-    let response = TraderResponse {
-        address: addr.to_string(),
-        total_stake: profile.total_stake,
-        performance: profile.performance,
-        followers_count: profile.followers.len() as u64,
+    // Wrap profile in TraderProfileResponse
+    let response = TraderProfileResponse {
+        profile,
     };
     
     to_json_binary(&response)
