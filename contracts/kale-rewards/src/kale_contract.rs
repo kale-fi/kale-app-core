@@ -1,13 +1,11 @@
 use cosmwasm_std::{
-    to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult,
-    Uint128, BankMsg, Coin, CosmosMsg, Addr, StdError, attr, Decimal,
+    to_json_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult,
+    Uint128, BankMsg, Coin, CosmosMsg, Addr, StdError, Decimal,
 };
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, StakerInfoResponse};
-use crate::state::{Config, StakerInfo, CONFIG, STAKERS, TOTAL_STAKED};
-use crate::kale_state::{Pool, Staker, POOL};
-use crate::kale_msg::{PoolResponse, TotalStakedResponse};
+use crate::kale_msg::{PoolResponse, StakerResponse, ConfigResponse, APYResponse, TotalStakedResponse};
+use crate::kale_state::{Config, Pool, Staker, CONFIG, POOL, STAKERS, TOTAL_STAKED};
 
 // Constants for APY calculation
 const MIN_APY: u64 = 8;  // 8% minimum APY
@@ -17,6 +15,7 @@ const BASE_POINTS: u64 = 10000; // For percentage calculations
 const SECONDS_PER_YEAR: u64 = 31536000; // 365 days in seconds
 const KALE_RESERVE: u128 = 1_000_000_000_000; // 1M KALE in smallest denomination (assuming 6 decimals)
 const FEE_YIELD_PERCENT: u64 = 50; // 50% of fees go to yield
+const LOCK_PERIOD: u64 = 86400; // 1 day in seconds
 
 // Execute functions
 pub fn execute_stake(
@@ -25,68 +24,54 @@ pub fn execute_stake(
     info: MessageInfo,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
-    let config = CONFIG.load(deps.storage)?;
-    
-    // Ensure the user sent the correct token
-    if info.funds.len() != 1 || info.funds[0].denom != config.token_denom {
-        return Err(ContractError::InvalidToken {});
+    // Validate that the user sent KALE tokens
+    let sent_funds = info.funds.iter().find(|coin| coin.denom == "kale");
+    if sent_funds.is_none() || sent_funds.unwrap().amount != amount {
+        return Err(ContractError::InvalidFunds {});
     }
     
-    if info.funds[0].amount != amount {
-        return Err(ContractError::InvalidAmount {});
-    }
-    
-    // Update staker info
+    // Get or create staker
     let staker_addr = info.sender.clone();
-    let mut staker = STAKERS.may_load(deps.storage, &staker_addr)?.unwrap_or_else(|| StakerInfo {
-        amount: Uint128::zero(),
-        last_stake_time: env.block.time.seconds(),
-        last_claim_time: env.block.time.seconds(),
-        accumulated_rewards: Uint128::zero(),
-    });
-    
-    // If there are unclaimed rewards, calculate and store them
-    if staker.amount > Uint128::zero() {
-        let unclaimed_rewards = calculate_yield(
-            deps.as_ref(),
-            &env,
-            &staker,
-            config.fee_pool,
-        )?;
-        staker.accumulated_rewards += unclaimed_rewards;
-    }
+    let mut staker = STAKERS
+        .may_load(deps.storage, &staker_addr)?
+        .unwrap_or_else(|| Staker {
+            address: staker_addr.clone(),
+            staked_amount: Uint128::zero(),
+            staked_since: env.block.time.seconds(),
+            last_claim_time: env.block.time.seconds(),
+            accumulated_rewards: Uint128::zero(),
+            locked_until: env.block.time.seconds() + LOCK_PERIOD,
+        });
     
     // Update staker info
-    staker.amount += amount;
-    staker.last_stake_time = env.block.time.seconds();
+    staker.staked_amount += amount;
+    if staker.staked_amount == amount {
+        // First time staking, update the staked_since timestamp
+        staker.staked_since = env.block.time.seconds();
+        staker.last_claim_time = env.block.time.seconds();
+    }
+    
+    // Set the lock period for the stake - 1 day (86400 seconds)
+    staker.locked_until = env.block.time.seconds() + LOCK_PERIOD;
+    
+    // Save staker info
     STAKERS.save(deps.storage, &staker_addr, &staker)?;
     
     // Update total staked
-    let mut total = TOTAL_STAKED.load(deps.storage)?;
-    total += amount;
-    TOTAL_STAKED.save(deps.storage, &total)?;
+    let mut total_staked = TOTAL_STAKED.load(deps.storage)?;
+    total_staked += amount;
+    TOTAL_STAKED.save(deps.storage, &total_staked)?;
     
-    // Also update the kale_state Staker if it exists
-    let kale_staker = Staker {
-        address: staker_addr.clone(),
-        staked_amount: staker.amount,
-        staked_since: staker.last_stake_time,
-        last_claim_time: staker.last_claim_time,
-        accumulated_rewards: staker.accumulated_rewards,
-    };
-    
-    // Update the pool in kale_state
-    let mut pool = POOL.may_load(deps.storage)?.unwrap_or_else(|| Pool {
-        usdc: Uint128::zero(),
-        kale: Uint128::zero(),
-    });
+    // Update pool
+    let mut pool = POOL.load(deps.storage)?;
     pool.kale += amount;
     POOL.save(deps.storage, &pool)?;
     
     Ok(Response::new()
-        .add_attribute("method", "stake")
+        .add_attribute("action", "stake")
         .add_attribute("staker", info.sender)
-        .add_attribute("amount", amount))
+        .add_attribute("amount", amount.to_string())
+        .add_attribute("locked_until", staker.locked_until.to_string()))
 }
 
 pub fn execute_unstake(
@@ -95,61 +80,50 @@ pub fn execute_unstake(
     info: MessageInfo,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
-    let config = CONFIG.load(deps.storage)?;
-    
-    // Get staker info
     let staker_addr = info.sender.clone();
+    
+    // Load staker info
     let mut staker = STAKERS.load(deps.storage, &staker_addr)?;
     
-    // Check if lock period has passed
-    let current_time = env.block.time.seconds();
-    if current_time < staker.last_stake_time + config.lock_period {
-        return Err(ContractError::StakeLocked {});
-    }
-    
     // Check if staker has enough staked
-    if staker.amount < amount {
+    if staker.staked_amount < amount {
         return Err(ContractError::InsufficientFunds {});
     }
     
-    // Calculate any unclaimed rewards
-    let unclaimed_rewards = calculate_yield(
-        deps.as_ref(),
-        &env,
-        &staker,
-        config.fee_pool,
-    )?;
-    staker.accumulated_rewards += unclaimed_rewards;
+    // Check if lock period has passed
+    let current_time = env.block.time.seconds();
+    if current_time < staker.locked_until {
+        return Err(ContractError::StakeLocked {});
+    }
     
     // Update staker info
-    staker.amount -= amount;
-    staker.last_stake_time = current_time;
+    staker.staked_amount -= amount;
     STAKERS.save(deps.storage, &staker_addr, &staker)?;
     
     // Update total staked
-    let mut total = TOTAL_STAKED.load(deps.storage)?;
-    total -= amount;
-    TOTAL_STAKED.save(deps.storage, &total)?;
+    let mut total_staked = TOTAL_STAKED.load(deps.storage)?;
+    total_staked -= amount;
+    TOTAL_STAKED.save(deps.storage, &total_staked)?;
     
-    // Update the pool in kale_state
+    // Update pool
     let mut pool = POOL.load(deps.storage)?;
     pool.kale -= amount;
     POOL.save(deps.storage, &pool)?;
     
     // Send tokens back to staker
     let msg = BankMsg::Send {
-        to_address: info.sender.to_string(),
+        to_address: staker_addr.to_string(),
         amount: vec![Coin {
-            denom: config.token_denom,
+            denom: "kale".to_string(),
             amount,
         }],
     };
     
     Ok(Response::new()
         .add_message(msg)
-        .add_attribute("method", "unstake")
-        .add_attribute("staker", info.sender)
-        .add_attribute("amount", amount))
+        .add_attribute("action", "unstake")
+        .add_attribute("staker", staker_addr)
+        .add_attribute("amount", amount.to_string()))
 }
 
 pub fn execute_claim(
@@ -157,165 +131,268 @@ pub fn execute_claim(
     env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
-    let config = CONFIG.load(deps.storage)?;
-    
-    // Get staker info
     let staker_addr = info.sender.clone();
+    
+    // Load staker info
     let mut staker = STAKERS.load(deps.storage, &staker_addr)?;
     
-    // Calculate rewards
-    let current_rewards = calculate_yield(
-        deps.as_ref(),
-        &env,
-        &staker,
-        config.fee_pool,
-    )?;
+    // Calculate yield
+    let rewards = calculate_yield(deps.as_ref(), &env, &staker)?;
     
-    // Add current rewards to accumulated rewards
-    let total_rewards = staker.accumulated_rewards + current_rewards;
-    
-    // Check if there are rewards to claim
-    if total_rewards.is_zero() {
+    if rewards.is_zero() {
         return Err(ContractError::NoRewards {});
     }
     
-    // Reset accumulated rewards
+    // Update pool
+    let mut pool = POOL.load(deps.storage)?;
+    if pool.usdc < rewards {
+        return Err(ContractError::InsufficientFunds {});
+    }
+    pool.usdc -= rewards;
+    POOL.save(deps.storage, &pool)?;
+    
+    // Update staker
     staker.accumulated_rewards = Uint128::zero();
     staker.last_claim_time = env.block.time.seconds();
     STAKERS.save(deps.storage, &staker_addr, &staker)?;
     
-    // Update the pool in kale_state
-    let mut pool = POOL.load(deps.storage)?;
-    pool.usdc = pool.usdc.checked_sub(total_rewards).unwrap_or_default();
-    POOL.save(deps.storage, &pool)?;
-    
     // Send rewards to staker
     let msg = BankMsg::Send {
-        to_address: info.sender.to_string(),
+        to_address: staker_addr.to_string(),
         amount: vec![Coin {
-            denom: "usdc".to_string(), // Rewards are paid in USDC
-            amount: total_rewards,
+            denom: "usdc".to_string(),
+            amount: rewards,
         }],
     };
     
-    // Update fee pool
-    let mut config = CONFIG.load(deps.storage)?;
-    config.fee_pool = config.fee_pool.checked_sub(total_rewards)?;
-    CONFIG.save(deps.storage, &config)?;
-    
     Ok(Response::new()
         .add_message(msg)
-        .add_attribute("method", "claim_rewards")
-        .add_attribute("staker", info.sender)
-        .add_attribute("rewards", total_rewards))
+        .add_attribute("action", "claim")
+        .add_attribute("staker", staker_addr)
+        .add_attribute("rewards", rewards.to_string()))
 }
 
-// Calculate yield based on stake amount, time, and available fee pool
 pub fn calculate_yield(
     deps: Deps,
     env: &Env,
-    staker: &StakerInfo,
-    fee_pool: Uint128,
+    staker: &Staker,
 ) -> StdResult<Uint128> {
-    // Get total staked
+    // Get config and pool
+    let config = CONFIG.load(deps.storage)?;
+    let pool = POOL.load(deps.storage)?;
     let total_staked = TOTAL_STAKED.load(deps.storage)?;
     
-    // If nothing is staked or this staker has no stake, return zero
-    if total_staked.is_zero() || staker.amount.is_zero() {
+    // Log inputs for debugging
+    deps.api.debug(&format!(
+        "Calculating yield - Staked amount: {}, Total staked: {}, USDC reserve: {}, Last claim time: {}",
+        staker.staked_amount, total_staked, pool.usdc, staker.last_claim_time
+    ));
+    
+    // If no USDC in pool or no tokens staked, return zero
+    if pool.usdc.is_zero() || total_staked.is_zero() || staker.staked_amount.is_zero() {
+        deps.api.debug("Zero USDC in pool or zero tokens staked, returning zero yield");
         return Ok(Uint128::zero());
     }
     
-    // Calculate the staker's share of the total stake
-    let stake_ratio = Decimal::from_ratio(staker.amount, total_staked);
-    
     // Calculate time since last claim
     let current_time = env.block.time.seconds();
-    let time_since_claim = current_time.saturating_sub(staker.last_claim_time);
+    let time_since_last_claim = current_time.saturating_sub(staker.last_claim_time);
     
-    // Calculate the base APY based on the total staked vs KALE reserve
-    // As more is staked, APY decreases from MAX to MIN
-    let utilization_ratio = Decimal::from_ratio(total_staked, Uint128::new(KALE_RESERVE));
-    let utilization_factor = if utilization_ratio > Decimal::one() {
-        Decimal::one() // Cap at 100% utilization
-    } else {
-        utilization_ratio
-    };
+    deps.api.debug(&format!(
+        "Current time: {}, Time since last claim: {} seconds",
+        current_time, time_since_last_claim
+    ));
     
-    // Calculate APY: MAX_APY - (utilization_factor * APY_RANGE)
-    let apy_decimal = Decimal::from_ratio(MAX_APY * BASE_POINTS - (utilization_factor * Decimal::from_ratio(APY_RANGE * BASE_POINTS, 1u128)).to_uint_floor(), BASE_POINTS);
-    
-    // Calculate the yield for the time period
-    // yield = stake_amount * apy * (time_since_claim / seconds_per_year)
-    let time_factor = Decimal::from_ratio(time_since_claim, SECONDS_PER_YEAR);
-    let yield_amount = staker.amount * apy_decimal * time_factor;
-    
-    // Calculate the staker's share of the fee pool
-    let fee_share = fee_pool * stake_ratio;
-    
-    // The actual yield is the minimum of the calculated yield and the staker's fee share
-    // This ensures we don't pay out more than what's available in the fee pool
-    let actual_yield = std::cmp::min(yield_amount, fee_share);
-    
-    Ok(actual_yield)
-}
-
-// Add fee to the yield pool (called by AMM contract)
-pub fn add_fee_to_pool(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    amount: Uint128,
-) -> Result<Response, ContractError> {
-    // Only authorized contracts can add fees
-    let config = CONFIG.load(deps.storage)?;
-    if !config.authorized_contracts.contains(&info.sender) {
-        return Err(ContractError::Unauthorized {});
+    // If no time has passed, return zero
+    if time_since_last_claim == 0 {
+        deps.api.debug("No time has passed since last claim, returning zero yield");
+        return Ok(Uint128::zero());
     }
     
-    // Update fee pool
-    let mut config = CONFIG.load(deps.storage)?;
-    config.fee_pool += amount;
-    CONFIG.save(deps.storage, &config)?;
+    // Fixed 8% APY as per spec
+    let apy = Decimal::from_ratio(8u64, 100u64);
     
-    // Update the pool in kale_state
+    // Calculate the staker's share of the total staked amount
+    let staker_share = Decimal::from_ratio(staker.staked_amount, total_staked);
+    deps.api.debug(&format!("Staker's share of total staked: {}", staker_share));
+    
+    // Calculate the annual yield in USDC for the staker
+    let annual_yield_usdc = pool.usdc * staker_share * apy;
+    deps.api.debug(&format!("Annual yield in USDC: {}", annual_yield_usdc));
+    
+    // Calculate the per-second yield rate
+    // 1 year = 365 days * 86400 seconds = 31,536,000 seconds
+    let seconds_per_year = 31_536_000u64;
+    let yield_per_second = annual_yield_usdc / Uint128::new(seconds_per_year);
+    deps.api.debug(&format!("Yield per second: {}", yield_per_second));
+    
+    // Calculate the actual yield for the time period
+    let yield_amount = yield_per_second * Uint128::new(time_since_last_claim);
+    deps.api.debug(&format!(
+        "Final yield amount for {} seconds: {}",
+        time_since_last_claim, yield_amount
+    ));
+    
+    // Example calculation for 100 KALE over 1.5 days (129,600 seconds):
+    // - If total staked is 1100 KALE, staker_share = 100/1100 = 0.0909
+    // - If USDC reserve is 1000 USDC, annual_yield_usdc = 1000 * 0.0909 * 0.08 = 7.272 USDC
+    // - yield_per_second = 7.272 / 31,536,000 = 0.0000002306 USDC
+    // - For 129,600 seconds (1.5 days), yield_amount = 0.0000002306 * 129,600 = 0.0299 USDC
+    
+    Ok(yield_amount)
+}
+
+// Add fee to the pool (from AMM contract)
+pub fn add_fee_to_pool(
+    deps: DepsMut,
+    _info: MessageInfo,
+    amount: Uint128,
+    token: String,
+) -> Result<Response, ContractError> {
+    // Only allow USDC to be added to the pool
+    if token != "usdc" {
+        return Err(ContractError::InvalidToken {});
+    }
+    
+    // Update pool
     let mut pool = POOL.load(deps.storage)?;
     pool.usdc += amount;
     POOL.save(deps.storage, &pool)?;
     
     Ok(Response::new()
-        .add_attribute("method", "add_fee_to_pool")
-        .add_attribute("amount", amount))
+        .add_attribute("action", "add_fee_to_pool")
+        .add_attribute("amount", amount.to_string())
+        .add_attribute("token", token))
 }
 
-// Helper function to update the config
+// Update config
 pub fn update_config(
     deps: DepsMut,
-    _env: Env,
     info: MessageInfo,
+    min_apy: Option<u64>,
+    max_apy: Option<u64>,
     lock_period: Option<u64>,
-    authorized_contracts: Option<Vec<String>>,
+    kale_reserve: Option<Uint128>,
+    fee_yield_percent: Option<u64>,
 ) -> Result<Response, ContractError> {
-    let mut config = CONFIG.load(deps.storage)?;
-    
     // Only owner can update config
+    let mut config = CONFIG.load(deps.storage)?;
     if info.sender != config.owner {
         return Err(ContractError::Unauthorized {});
     }
     
-    // Update lock period if provided
-    if let Some(period) = lock_period {
-        config.lock_period = period;
+    // Update config fields
+    if let Some(min_apy) = min_apy {
+        config.min_apy = min_apy;
     }
     
-    // Update authorized contracts if provided
-    if let Some(contracts) = authorized_contracts {
-        config.authorized_contracts = contracts
-            .iter()
-            .map(|addr| deps.api.addr_validate(addr))
-            .collect::<StdResult<Vec<Addr>>>()?;
+    if let Some(max_apy) = max_apy {
+        config.max_apy = max_apy;
     }
     
+    if let Some(lock_period) = lock_period {
+        config.lock_period = lock_period;
+    }
+    
+    if let Some(kale_reserve) = kale_reserve {
+        config.kale_reserve = kale_reserve;
+    }
+    
+    if let Some(fee_yield_percent) = fee_yield_percent {
+        config.fee_yield_percent = fee_yield_percent;
+    }
+    
+    // Save updated config
     CONFIG.save(deps.storage, &config)?;
     
-    Ok(Response::new().add_attribute("method", "update_config"))
+    Ok(Response::new().add_attribute("action", "update_config"))
+}
+
+// Query functions
+pub fn query_config(deps: Deps) -> StdResult<Binary> {
+    let config = CONFIG.load(deps.storage)?;
+    
+    let response = ConfigResponse {
+        owner: config.owner.to_string(),
+        min_apy: config.min_apy,
+        max_apy: config.max_apy,
+        lock_period: config.lock_period,
+        kale_reserve: config.kale_reserve,
+        fee_yield_percent: config.fee_yield_percent,
+    };
+    
+    to_json_binary(&response)
+}
+
+pub fn query_pool(deps: Deps) -> StdResult<Binary> {
+    let pool = POOL.load(deps.storage)?;
+    
+    let response = PoolResponse {
+        usdc: pool.usdc,
+        kale: pool.kale,
+    };
+    
+    to_json_binary(&response)
+}
+
+pub fn query_staker(deps: Deps, env: Env, address: String) -> StdResult<Binary> {
+    let addr = deps.api.addr_validate(&address)?;
+    
+    let staker = STAKERS.may_load(deps.storage, &addr)?.unwrap_or_else(|| Staker {
+        address: addr.clone(),
+        staked_amount: Uint128::zero(),
+        staked_since: env.block.time.seconds(),
+        last_claim_time: env.block.time.seconds(),
+        accumulated_rewards: Uint128::zero(),
+        locked_until: env.block.time.seconds() + LOCK_PERIOD,
+    });
+    
+    // Calculate estimated rewards
+    let estimated_rewards = calculate_yield(deps, &env, &staker)?;
+    
+    let response = StakerResponse {
+        address: staker.address.to_string(),
+        staked_amount: staker.staked_amount,
+        staked_since: staker.staked_since,
+        last_claim_time: staker.last_claim_time,
+        accumulated_rewards: staker.accumulated_rewards,
+        estimated_rewards,
+        locked_until: staker.locked_until,
+    };
+    
+    to_json_binary(&response)
+}
+
+pub fn query_total_staked(deps: Deps) -> StdResult<Binary> {
+    let total = TOTAL_STAKED.load(deps.storage)?;
+    
+    let response = TotalStakedResponse {
+        amount: total,
+    };
+    
+    to_json_binary(&response)
+}
+
+pub fn query_current_apy(deps: Deps) -> StdResult<Binary> {
+    let config = CONFIG.load(deps.storage)?;
+    let pool = POOL.load(deps.storage)?;
+    
+    // Calculate APY based on pool utilization
+    // If kale_reserve is zero, use the minimum APY to avoid division by zero
+    let current_apy = if config.kale_reserve.is_zero() {
+        Decimal::from_ratio(config.min_apy, 100u64)
+    } else {
+        let utilization_ratio = Decimal::from_ratio(pool.kale, config.kale_reserve);
+        let apy_range = config.max_apy - config.min_apy;
+        let apy_adjustment = Decimal::from_ratio(apy_range, 100u64) * utilization_ratio;
+        Decimal::from_ratio(config.min_apy, 100u64) + apy_adjustment
+    };
+    
+    let response = APYResponse {
+        current_apy,
+        min_apy: config.min_apy,
+        max_apy: config.max_apy,
+    };
+    
+    to_json_binary(&response)
 }
