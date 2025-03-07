@@ -2,8 +2,6 @@ package main
 
 import (
 	"os"
-	
-	"github.com/kale-fi/kale-app-core/app"
 )
 
 func main() {

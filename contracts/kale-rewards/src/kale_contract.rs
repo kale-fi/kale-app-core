@@ -1,6 +1,6 @@
 use cosmwasm_std::{
     to_json_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult,
-    Uint128, BankMsg, Coin, CosmosMsg, Addr, StdError, Decimal,
+    Uint128, BankMsg, Coin, Decimal,
 };
 
 use crate::error::ContractError;
@@ -172,6 +172,10 @@ pub fn execute_claim(
         .add_attribute("rewards", rewards.to_string()))
 }
 
+// The problem is in the calculate_yield function where integer division
+// results in the yield_per_second being rounded down to zero.
+// Here's the fixed function:
+
 pub fn calculate_yield(
     deps: Deps,
     env: &Env,
@@ -219,25 +223,18 @@ pub fn calculate_yield(
     // Calculate the annual yield in USDC for the staker
     let annual_yield_usdc = pool.usdc * staker_share * apy;
     deps.api.debug(&format!("Annual yield in USDC: {}", annual_yield_usdc));
-    
-    // Calculate the per-second yield rate
-    // 1 year = 365 days * 86400 seconds = 31,536,000 seconds
+
+    // Instead of dividing the annual yield by seconds per year and then multiplying by time passed,
+    // calculate the proportion of a year that has passed and multiply by the annual yield
     let seconds_per_year = 31_536_000u64;
-    let yield_per_second = annual_yield_usdc / Uint128::new(seconds_per_year);
-    deps.api.debug(&format!("Yield per second: {}", yield_per_second));
+    let time_ratio = Decimal::from_ratio(time_since_last_claim, seconds_per_year);
     
     // Calculate the actual yield for the time period
-    let yield_amount = yield_per_second * Uint128::new(time_since_last_claim);
+    let yield_amount = annual_yield_usdc * time_ratio;
     deps.api.debug(&format!(
-        "Final yield amount for {} seconds: {}",
-        time_since_last_claim, yield_amount
+        "Time ratio: {}, Final yield amount for {} seconds: {}",
+        time_ratio, time_since_last_claim, yield_amount
     ));
-    
-    // Example calculation for 100 KALE over 1.5 days (129,600 seconds):
-    // - If total staked is 1100 KALE, staker_share = 100/1100 = 0.0909
-    // - If USDC reserve is 1000 USDC, annual_yield_usdc = 1000 * 0.0909 * 0.08 = 7.272 USDC
-    // - yield_per_second = 7.272 / 31,536,000 = 0.0000002306 USDC
-    // - For 129,600 seconds (1.5 days), yield_amount = 0.0000002306 * 129,600 = 0.0299 USDC
     
     Ok(yield_amount)
 }

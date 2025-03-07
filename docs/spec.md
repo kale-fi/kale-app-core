@@ -12,7 +12,7 @@ This repository implements the Dymension RollApp blockchain with CosmWasm smart 
 #### /amm/
 - **src/lib.rs**: Entry point for AMM contract.
 - **src/contract.rs**: Swap and liquidity logic.
-  - Use: Executes swaps with 0.2% fee (50% yield, 30% LP, 20% Treasury).
+  - Use: Executes swaps with 0.2% fee (50% yield, 25% LP, 25% Treasury).
   - Pseudocode:
     ```
     execute_swap(sender, amount_in, token_in, token_out) {

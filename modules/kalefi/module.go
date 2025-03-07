@@ -1,6 +1,7 @@
 package kalefi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -12,10 +13,10 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
-	abci "github.com/tendermint/tendermint/abci/types"
+	abci "github.com/cometbft/cometbft/abci/types"
 
-	"github.com/byronoconnor/kale-fi/kale-app-core/modules/kalefi/keeper"
-	"github.com/byronoconnor/kale-fi/kale-app-core/modules/kalefi/types"
+	"kale-app-core/modules/kalefi/keeper"
+	"kale-app-core/modules/kalefi/types"
 )
 
 var (
@@ -39,13 +40,15 @@ func (AppModuleBasic) RegisterInterfaces(registry codectypes.InterfaceRegistry) 
 
 // DefaultGenesis returns default genesis state as raw bytes for the kalefi module.
 func (AppModuleBasic) DefaultGenesis(cdc codec.JSONCodec) json.RawMessage {
-	return cdc.MustMarshalJSON(types.DefaultGenesis())
+	// Use JSON marshaling instead of protobuf
+	defaultGenesis := types.DefaultGenesis()
+	return json.RawMessage(defaultGenesis.String())
 }
 
 // ValidateGenesis performs genesis state validation for the kalefi module.
 func (AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEncodingConfig, bz json.RawMessage) error {
 	var genState types.GenesisState
-	if err := cdc.UnmarshalJSON(bz, &genState); err != nil {
+	if err := json.Unmarshal(bz, &genState); err != nil {
 		return fmt.Errorf("failed to unmarshal %s genesis state: %w", types.ModuleName, err)
 	}
 	return genState.Validate()
@@ -86,12 +89,19 @@ func (AppModule) Name() string {
 	return types.ModuleName
 }
 
+// IsAppModule implements the appmodule.AppModule interface.
+func (AppModule) IsAppModule() {}
+
+// IsOnePerModuleType implements the depinject.OnePerModuleType interface.
+func (AppModule) IsOnePerModuleType() {}
+
 // RegisterInvariants registers the kalefi module invariants.
 func (am AppModule) RegisterInvariants(ir sdk.InvariantRegistry) {}
 
 // Route returns the message routing key for the kalefi module.
-func (am AppModule) Route() sdk.Route {
-	return sdk.NewRoute(types.RouterKey, nil)
+// This is deprecated in Cosmos SDK v0.50.x
+func (am AppModule) Route() string {
+	return types.RouterKey
 }
 
 // QuerierRoute returns the kalefi module's querier route name.
@@ -100,7 +110,8 @@ func (AppModule) QuerierRoute() string {
 }
 
 // LegacyQuerierHandler returns the kalefi module sdk.Querier.
-func (am AppModule) LegacyQuerierHandler(legacyQuerierCdc *codec.LegacyAmino) sdk.Querier {
+// This is deprecated in Cosmos SDK v0.50.x
+func (am AppModule) LegacyQuerierHandler(legacyQuerierCdc *codec.LegacyAmino) interface{} {
 	return nil
 }
 
@@ -108,29 +119,55 @@ func (am AppModule) LegacyQuerierHandler(legacyQuerierCdc *codec.LegacyAmino) sd
 func (am AppModule) RegisterServices(cfg module.Configurator) {}
 
 // InitGenesis performs genesis initialization for the kalefi module.
-func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.RawMessage) []abci.ValidatorUpdate {
+func (am AppModule) InitGenesis(ctx context.Context, cdc codec.JSONCodec, data json.RawMessage) []abci.ValidatorUpdate {
 	var genesisState types.GenesisState
-	cdc.MustUnmarshalJSON(data, &genesisState)
+	// Use JSON unmarshaling instead of protobuf
+	if err := json.Unmarshal(data, &genesisState); err != nil {
+		panic(fmt.Sprintf("failed to unmarshal %s genesis state: %v", types.ModuleName, err))
+	}
 	
-	// Initialize module parameters
+	// Set module parameters
 	am.keeper.SetParams(ctx, genesisState.Params)
+	
+	// Initialize the module state
+	am.keeper.InitGenesis(ctx, genesisState)
 	
 	return []abci.ValidatorUpdate{}
 }
 
 // ExportGenesis returns the exported genesis state as raw bytes for the kalefi module.
-func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.RawMessage {
-	gs := types.ExportGenesis(ctx, am.keeper)
-	return cdc.MustMarshalJSON(gs)
+func (am AppModule) ExportGenesis(ctx context.Context, cdc codec.JSONCodec) json.RawMessage {
+	gs := am.keeper.ExportGenesis(ctx)
+	// Use JSON marshaling instead of protobuf
+	bz, err := json.Marshal(gs)
+	if err != nil {
+		panic(fmt.Sprintf("failed to marshal %s genesis state: %v", types.ModuleName, err))
+	}
+	return bz
 }
 
 // ConsensusVersion implements AppModule/ConsensusVersion.
 func (AppModule) ConsensusVersion() uint64 { return 1 }
 
-// BeginBlock returns the begin blocker for the kalefi module.
-func (am AppModule) BeginBlock(ctx sdk.Context, _ abci.RequestBeginBlock) {}
+// PreBlock implements the appmodule.HasPreBlocker interface
+func (am AppModule) PreBlock(ctx context.Context) error {
+	// No pre block logic for kalefi
+	return nil
+}
 
-// EndBlock returns the end blocker for the kalefi module.
-func (am AppModule) EndBlock(ctx sdk.Context, _ abci.RequestEndBlock) []abci.ValidatorUpdate {
-	return []abci.ValidatorUpdate{}
+// BeginBlock implements the appmodule.HasBeginBlocker interface for backwards compatibility
+func (am AppModule) BeginBlock(ctx context.Context) error {
+	// No begin block logic for kalefi
+	return nil
+}
+
+// EndBlock implements the appmodule.HasEndBlocker interface for backwards compatibility
+func (am AppModule) EndBlock(ctx context.Context) ([]abci.ValidatorUpdate, error) {
+	return []abci.ValidatorUpdate{}, nil
+}
+
+// PostBlock implements the appmodule.HasPostBlocker interface
+func (am AppModule) PostBlock(ctx context.Context) error {
+	// No post block logic for kalefi
+	return nil
 }

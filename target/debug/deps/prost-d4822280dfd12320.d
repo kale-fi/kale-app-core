@@ -1,0 +1,11 @@
+/Users/byronoconnor/kale-fi/kale-app-core/target/debug/deps/libprost-d4822280dfd12320.rmeta: /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/lib.rs /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/error.rs /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/message.rs /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/name.rs /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/types.rs /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/encoding.rs /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/../README.md
+
+/Users/byronoconnor/kale-fi/kale-app-core/target/debug/deps/prost-d4822280dfd12320.d: /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/lib.rs /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/error.rs /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/message.rs /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/name.rs /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/types.rs /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/encoding.rs /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/../README.md
+
+/Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/lib.rs:
+/Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/error.rs:
+/Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/message.rs:
+/Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/name.rs:
+/Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/types.rs:
+/Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/encoding.rs:
+/Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/prost-0.12.6/src/../README.md:

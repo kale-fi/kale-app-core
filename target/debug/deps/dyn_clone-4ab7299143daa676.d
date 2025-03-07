@@ -1,0 +1,8 @@
+/Users/byronoconnor/kale-fi/kale-app-core/target/debug/deps/libdyn_clone-4ab7299143daa676.rmeta: /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/dyn-clone-1.0.19/src/lib.rs /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/dyn-clone-1.0.19/src/macros.rs
+
+/Users/byronoconnor/kale-fi/kale-app-core/target/debug/deps/libdyn_clone-4ab7299143daa676.rlib: /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/dyn-clone-1.0.19/src/lib.rs /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/dyn-clone-1.0.19/src/macros.rs
+
+/Users/byronoconnor/kale-fi/kale-app-core/target/debug/deps/dyn_clone-4ab7299143daa676.d: /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/dyn-clone-1.0.19/src/lib.rs /Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/dyn-clone-1.0.19/src/macros.rs
+
+/Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/dyn-clone-1.0.19/src/lib.rs:
+/Users/byronoconnor/.cargo/registry/src/index.crates.io-6f17d22bba15001f/dyn-clone-1.0.19/src/macros.rs:

@@ -1,20 +1,22 @@
 package types
 
 import (
-	"github.com/byronoconnor/kale-fi/kale-app-core/modules/kalefi/keeper"
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"encoding/json"
+	"fmt"
 )
 
 // DefaultGenesis returns default genesis state as raw bytes for the kalefi module.
 func DefaultGenesis() *GenesisState {
 	return &GenesisState{
-		Params: DefaultParams(),
+		Params:      DefaultParams(),
+		TradeEvents: []KaleTradeEvent{},
 	}
 }
 
 // GenesisState defines the kalefi module's genesis state.
 type GenesisState struct {
-	Params Params `json:"params"`
+	Params      Params          `json:"params"`
+	TradeEvents []KaleTradeEvent `json:"trade_events"`
 }
 
 // Validate performs basic genesis state validation returning an error upon any failure.
@@ -23,9 +25,11 @@ func (gs GenesisState) Validate() error {
 	return nil
 }
 
-// ExportGenesis returns the exported genesis state as raw bytes for the kalefi module.
-func ExportGenesis(ctx sdk.Context, k keeper.KalefiKeeper) *GenesisState {
-	return &GenesisState{
-		Params: k.GetParams(ctx),
+// String returns the GenesisState as a string
+func (gs GenesisState) String() string {
+	bz, err := json.Marshal(gs)
+	if err != nil {
+		return fmt.Sprintf("failed to marshal genesis state: %v", err)
 	}
+	return string(bz)
 }

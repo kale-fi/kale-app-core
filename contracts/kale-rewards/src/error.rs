@@ -29,4 +29,10 @@ pub enum ContractError {
 
     #[error("Invalid lock period")]
     InvalidLockPeriod {},
+    
+    #[error("Invalid funds")]
+    InvalidFunds {},
+    
+    #[error("Invalid APY configuration")]
+    InvalidAPY {},
 }

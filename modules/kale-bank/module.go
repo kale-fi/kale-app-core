@@ -1,6 +1,7 @@
 package kalebank
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -12,10 +13,10 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
-	abci "github.com/tendermint/tendermint/abci/types"
+	abci "github.com/cometbft/cometbft/abci/types"
 
-	"github.com/byronoconnor/kale-fi/kale-app-core/modules/kale-bank/keeper"
-	"github.com/byronoconnor/kale-fi/kale-app-core/modules/kale-bank/types"
+	"kale-app-core/modules/kale-bank/keeper"
+	"kale-app-core/modules/kale-bank/types"
 )
 
 var (
@@ -44,11 +45,11 @@ func (AppModuleBasic) DefaultGenesis(cdc codec.JSONCodec) json.RawMessage {
 
 // ValidateGenesis performs genesis state validation for the kale-bank module.
 func (AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEncodingConfig, bz json.RawMessage) error {
-	var genState GenesisState
+	var genState types.GenesisState
 	if err := cdc.UnmarshalJSON(bz, &genState); err != nil {
 		return fmt.Errorf("failed to unmarshal %s genesis state: %w", types.ModuleName, err)
 	}
-	return genState.Validate()
+	return nil
 }
 
 // RegisterRESTRoutes registers the REST routes for the kale-bank module.
@@ -67,7 +68,7 @@ func (AppModuleBasic) GetQueryCmd() *cobra.Command {
 	return nil
 }
 
-// AppModule implements an application module for the kale-bank module.
+// AppModule implements the AppModule interface for the kale-bank module.
 type AppModule struct {
 	AppModuleBasic
 	keeper keeper.KaleBankKeeper
@@ -86,12 +87,18 @@ func (AppModule) Name() string {
 	return types.ModuleName
 }
 
+// IsAppModule implements the appmodule.AppModule interface.
+func (AppModule) IsAppModule() {}
+
+// IsOnePerModuleType implements the depinject.OnePerModuleType interface.
+func (AppModule) IsOnePerModuleType() {}
+
 // RegisterInvariants registers the kale-bank module invariants.
 func (am AppModule) RegisterInvariants(ir sdk.InvariantRegistry) {}
 
 // Route returns the message routing key for the kale-bank module.
-func (am AppModule) Route() sdk.Route {
-	return sdk.NewRoute(types.RouterKey, nil)
+func (am AppModule) Route() string {
+	return types.RouterKey
 }
 
 // QuerierRoute returns the kale-bank module's querier route name.
@@ -100,20 +107,25 @@ func (AppModule) QuerierRoute() string {
 }
 
 // LegacyQuerierHandler returns the kale-bank module sdk.Querier.
-func (am AppModule) LegacyQuerierHandler(legacyQuerierCdc *codec.LegacyAmino) sdk.Querier {
-	return nil
+func (am AppModule) LegacyQuerierHandler(*codec.LegacyAmino) func(ctx context.Context, path []string, req abci.RequestQuery) ([]byte, error) {
+	return func(ctx context.Context, path []string, req abci.RequestQuery) ([]byte, error) {
+		return nil, nil
+	}
 }
 
 // RegisterServices registers module services.
 func (am AppModule) RegisterServices(cfg module.Configurator) {}
 
 // InitGenesis performs genesis initialization for the kale-bank module.
-func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.RawMessage) []abci.ValidatorUpdate {
-	var genesisState GenesisState
+func (am AppModule) InitGenesis(ctx context.Context, cdc codec.JSONCodec, data json.RawMessage) []abci.ValidatorUpdate {
+	var genesisState types.GenesisState
 	cdc.MustUnmarshalJSON(data, &genesisState)
 
+	// Set the module parameters
+	am.keeper.SetParams(ctx, genesisState.Params)
+
 	// Initialize the KALE token supply if specified in genesis
-	if genesisState.InitialSupplyRecipient != "" {
+	if genesisState.InitialSupplyRecipient != "" && !am.keeper.IsInitialized(ctx) {
 		recipientAddr, err := sdk.AccAddressFromBech32(genesisState.InitialSupplyRecipient)
 		if err != nil {
 			panic(err)
@@ -129,7 +141,7 @@ func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.
 }
 
 // ExportGenesis returns the exported genesis state as raw bytes for the kale-bank module.
-func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.RawMessage {
+func (am AppModule) ExportGenesis(ctx context.Context, cdc codec.JSONCodec) json.RawMessage {
 	gs := ExportGenesis(ctx, am.keeper)
 	return cdc.MustMarshalJSON(gs)
 }
@@ -137,10 +149,25 @@ func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.Raw
 // ConsensusVersion implements AppModule/ConsensusVersion.
 func (AppModule) ConsensusVersion() uint64 { return 1 }
 
-// BeginBlock returns the begin blocker for the kale-bank module.
-func (am AppModule) BeginBlock(ctx sdk.Context, _ abci.RequestBeginBlock) {}
+// PreBlock implements the appmodule.HasPreBlocker interface
+func (am AppModule) PreBlock(ctx context.Context) error {
+	// No pre block logic for kale-bank
+	return nil
+}
 
-// EndBlock returns the end blocker for the kale-bank module.
-func (am AppModule) EndBlock(ctx sdk.Context, _ abci.RequestEndBlock) []abci.ValidatorUpdate {
-	return []abci.ValidatorUpdate{}
+// BeginBlock implements the appmodule.HasBeginBlocker interface for backwards compatibility
+func (am AppModule) BeginBlock(ctx context.Context) error {
+	// No begin block logic for kale-bank
+	return nil
+}
+
+// EndBlock implements the appmodule.HasEndBlocker interface for backwards compatibility
+func (am AppModule) EndBlock(ctx context.Context) ([]abci.ValidatorUpdate, error) {
+	return []abci.ValidatorUpdate{}, nil
+}
+
+// PostBlock implements the appmodule.HasPostBlocker interface
+func (am AppModule) PostBlock(ctx context.Context) error {
+	// No post block logic for kale-bank
+	return nil
 }

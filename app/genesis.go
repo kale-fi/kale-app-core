@@ -1,9 +1,5 @@
 package app
 
-import (
-	sdk "github.com/cosmos/cosmos-sdk/types"
-)
-
 // GenesisState defines the initial state of the blockchain
 type GenesisState struct {
 	// Add fields as needed
