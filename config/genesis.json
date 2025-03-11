@@ -1,11 +1,37 @@
 {
   "app_name": "",
   "app_version": "",
-  "genesis_time": "2025-03-06T19:02:41.712574Z",
+  "genesis_time": "2025-03-07T16:33:06.870034Z",
   "chain_id": "kale-test-1",
   "initial_height": 1,
   "app_hash": null,
-  "app_state": {},
+  "app_state": {
+    "bank": {
+      "balances": [
+        {
+          "address": "kale1sjdapqty7uaq0wjrsks69zcmw3ss2ryjulxw0x",
+          "coins": [
+            {
+              "denom": "ukale",
+              "amount": "10000000"
+            },
+            {
+              "denom": "uusdc",
+              "amount": "10000000"
+            }
+          ]
+        }
+      ]
+    },
+    "auth": {
+      "accounts": [
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "kale1sjdapqty7uaq0wjrsks69zcmw3ss2ryjulxw0x"
+        }
+      ]
+    }
+  },
   "consensus": {
     "params": {
       "block": {

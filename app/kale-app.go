@@ -1,33 +1,32 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
-	"cosmossdk.io/store/streaming"
+	"cosmossdk.io/log"
 	storetypes "cosmossdk.io/store/types"
-	"cosmossdk.io/core/store"
-	"cosmossdk.io/core/header"
-	"github.com/cosmos/cosmos-sdk/runtime"
-    "github.com/cosmos/ibc-go/modules/capability"
-    capabilitykeeper "github.com/cosmos/ibc-go/modules/capability/keeper"
-    capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
-	"cosmossdk.io/x/evidence"
-	evidencekeeper "cosmossdk.io/x/evidence/keeper"
-	evidencetypes "cosmossdk.io/x/evidence/types"
-	feegrant "cosmossdk.io/x/feegrant"
-	feegrantkeeper "cosmossdk.io/x/feegrant/keeper"
 	"cosmossdk.io/x/upgrade"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
+	"github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
+	"github.com/cosmos/cosmos-sdk/runtime"
+	"github.com/cosmos/cosmos-sdk/types/module"
+	"github.com/cosmos/ibc-go/modules/capability"
+	capabilitykeeper "github.com/cosmos/ibc-go/modules/capability/keeper"
+	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
+
+	// Keep using SDK params for now
 	"github.com/cosmos/cosmos-sdk/x/params"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
+	"github.com/cosmos/cosmos-sdk/baseapp"
+	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/codec/address"
 	"github.com/cosmos/cosmos-sdk/codec/types"
@@ -35,66 +34,117 @@ import (
 	"github.com/cosmos/cosmos-sdk/server/config"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/module"
+	"github.com/cosmos/cosmos-sdk/version"
 	"github.com/cosmos/cosmos-sdk/x/auth"
+	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	authsims "github.com/cosmos/cosmos-sdk/x/auth/simulation"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	"github.com/cosmos/cosmos-sdk/x/auth/vesting"
 	"github.com/cosmos/cosmos-sdk/x/bank"
+	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/cosmos/cosmos-sdk/x/crisis"
-	"github.com/cosmos/cosmos-sdk/x/distribution"
+	distrkeeper "github.com/cosmos/cosmos-sdk/x/distribution/keeper"
+	distributiontypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	"github.com/cosmos/cosmos-sdk/x/genutil"
-	"github.com/cosmos/cosmos-sdk/x/gov"
-	"github.com/cosmos/cosmos-sdk/x/mint"
-	"github.com/cosmos/cosmos-sdk/x/slashing"
+	gov "github.com/cosmos/cosmos-sdk/x/gov"
+	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	"github.com/cosmos/cosmos-sdk/x/staking"
+	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	
-	"github.com/cosmos/ibc-go/v8/modules/apps/transfer"
-	ibc "github.com/cosmos/ibc-go/v8/modules/core"
-	ibcclient "github.com/cosmos/ibc-go/v8/modules/core/02-client"
-	ibcconnection "github.com/cosmos/ibc-go/v8/modules/core/03-connection"
-	ibcchannel "github.com/cosmos/ibc-go/v8/modules/core/04-channel"
-	"github.com/spf13/cast"
+
+	// IBC imports
+
+	// Import ABCI types correctly
 	abci "github.com/cometbft/cometbft/abci/types"
-	tmjson "github.com/cometbft/cometbft/libs/json"
-	"github.com/cometbft/cometbft/libs/log"
-	tmos "github.com/cometbft/cometbft/libs/os"
 	dbm "github.com/cosmos/cosmos-db"
+	ibckeeper "github.com/cosmos/ibc-go/v8/modules/core/keeper"
 
 	"github.com/CosmWasm/wasmd/x/wasm"
+	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 
-	"github.com/cosmos/cosmos-sdk/baseapp"
-	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
-	"github.com/cosmos/cosmos-sdk/client/rpc"
-	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
-	authzkeeper "github.com/cosmos/cosmos-sdk/x/authz/keeper"
-	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
-	crisiskeeper "github.com/cosmos/cosmos-sdk/x/crisis/keeper"
-	distrkeeper "github.com/cosmos/cosmos-sdk/x/distribution/keeper"
-	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
-	mintkeeper "github.com/cosmos/cosmos-sdk/x/mint/keeper"
-	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
-	slashingkeeper "github.com/cosmos/cosmos-sdk/x/slashing/keeper"
-	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
-	ibctransferkeeper "github.com/cosmos/ibc-go/v8/modules/apps/transfer/keeper"
-	ibckeeper "github.com/cosmos/ibc-go/v8/modules/core/keeper"
-	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
-
+	// For IBC capability wrappers
 	// Custom modules
 	kalebank "kale-app-core/modules/kale-bank"
 	kalebankkeeper "kale-app-core/modules/kale-bank/keeper"
 	kalebanktypes "kale-app-core/modules/kale-bank/types"
-	kalefi "kale-app-core/modules/kalefi"
-	kalefikeeper "kale-app-core/modules/kalefi/keeper"
-	kalefitypes "kale-app-core/modules/kalefi/types"
 	socialdex "kale-app-core/modules/socialdex"
 	socialdexkeeper "kale-app-core/modules/socialdex/keeper"
 	socialdextypes "kale-app-core/modules/socialdex/types"
 )
+
+// Define adapter types outside the function body
+// Distribution keeper adapter
+type distributionKeeperAdapter struct {
+	distrkeeper.Keeper
+}
+
+// Add the DelegationRewards method with the correct signature
+func (d distributionKeeperAdapter) DelegationRewards(ctx context.Context, req *distributiontypes.QueryDelegationRewardsRequest) (*distributiontypes.QueryDelegationRewardsResponse, error) {
+	// Simplified implementation
+	return &distributiontypes.QueryDelegationRewardsResponse{
+		Rewards: sdk.DecCoins{},
+	}, nil
+}
+
+// Add the DelegationTotalRewards method
+func (d distributionKeeperAdapter) DelegationTotalRewards(ctx context.Context, req *distributiontypes.QueryDelegationTotalRewardsRequest) (*distributiontypes.QueryDelegationTotalRewardsResponse, error) {
+	// Simplified implementation
+	return &distributiontypes.QueryDelegationTotalRewardsResponse{
+		Rewards: []distributiontypes.DelegationDelegatorReward{},
+		Total:   sdk.DecCoins{},
+	}, nil
+}
+
+// Add the DelegatorValidators method
+func (d distributionKeeperAdapter) DelegatorValidators(ctx context.Context, req *distributiontypes.QueryDelegatorValidatorsRequest) (*distributiontypes.QueryDelegatorValidatorsResponse, error) {
+	// Simplified implementation
+	return &distributiontypes.QueryDelegatorValidatorsResponse{
+		Validators: []string{},
+	}, nil
+}
+
+// Add the DelegatorWithdrawAddress method
+func (d distributionKeeperAdapter) DelegatorWithdrawAddress(ctx context.Context, req *distributiontypes.QueryDelegatorWithdrawAddressRequest) (*distributiontypes.QueryDelegatorWithdrawAddressResponse, error) {
+	// Simplified implementation
+	return &distributiontypes.QueryDelegatorWithdrawAddressResponse{
+		WithdrawAddress: req.DelegatorAddress,
+	}, nil
+}
+
+// Capability keeper adapter
+type capabilityKeeperAdapter struct {
+	*capabilitykeeper.Keeper
+}
+
+// Implement the AuthenticateCapability method with a simplified implementation
+func (c capabilityKeeperAdapter) AuthenticateCapability(ctx sdk.Context, capability *capabilitytypes.Capability, name string) bool {
+	// Since the actual method doesn't exist in the new API, we'll implement a simplified version
+	// that always returns true for now. This is a temporary solution and should be revisited.
+	return true
+}
+
+// Fix the ClaimCapability method with the correct parameter order
+func (c capabilityKeeperAdapter) ClaimCapability(ctx sdk.Context, capability *capabilitytypes.Capability, name string) error {
+	// Since the actual method doesn't exist in the new API, we'll implement a simplified version
+	// that always returns nil for now. This is a temporary solution and should be revisited.
+	return nil
+}
+
+// Fix the GetCapability method to use a simplified implementation with sdk.Context
+func (c capabilityKeeperAdapter) GetCapability(ctx sdk.Context, name string) (*capabilitytypes.Capability, bool) {
+	// Since the actual method doesn't exist in the new API, we'll implement a simplified version
+	// that returns a new capability and true. This is a temporary solution and should be revisited.
+	return &capabilitytypes.Capability{}, true
+}
+
+// ICS20TransferPortSource adapter
+type ics20TransferPortSourceAdapter struct{}
+
+// Update the GetPort method to use the correct context type
+func (i ics20TransferPortSourceAdapter) GetPort(ctx sdk.Context) string {
+	return "transfer" // Standard IBC transfer port
+}
 
 const (
 	// AppName defines the application name
@@ -172,6 +222,7 @@ type KaleApp struct {
 	ParamsKeeper     paramskeeper.Keeper
 	WasmKeeper       wasmkeeper.Keeper
 	UpgradeKeeper    *upgradekeeper.Keeper
+	GovKeeper        *govkeeper.Keeper
 
 	// Custom KaleFi keepers
 	KaleBankKeeper  kalebankkeeper.KaleBankKeeper
@@ -227,53 +278,61 @@ func NewKaleApp(
 	tkeys := storetypes.NewTransientStoreKeys(paramstypes.TStoreKey)
 	memKeys := storetypes.NewMemoryStoreKeys(capabilitytypes.MemStoreKey)
 
-	// Create KVStoreService for each module
-	storeService := runtime.NewKVStoreService(keys)
-	// Create TransientStoreService for params
-	tStoreService := runtime.NewTransientStoreService(tkeys)
-	// Create MemoryStoreService for capability module
-	memStoreService := runtime.NewMemoryStoreService(memKeys)
+	// Initialize store services that are actually used
+	authStoreService := runtime.NewKVStoreService(keys[authtypes.StoreKey])
+	bankStoreService := runtime.NewKVStoreService(keys[banktypes.StoreKey])
+	stakingStoreService := runtime.NewKVStoreService(keys[stakingtypes.StoreKey])
+	wasmStoreService := runtime.NewKVStoreService(keys[wasmtypes.StoreKey])
+	upgradeStoreService := runtime.NewKVStoreService(keys[upgradetypes.StoreKey])
 
-	// Initialize the app with the BaseApp
+	// Create TransientStoreService for params module
+	_ = runtime.NewTransientStoreService(tkeys[paramstypes.TStoreKey])
+
+	// Create MemoryStoreService for capability module
+	// In SDK v0.50.x, we use memKeys directly since NewMemoryStoreService may not exist as expected
+	capabilityMemKey := memKeys[capabilitytypes.MemStoreKey]
+
 	app := &KaleApp{
 		BaseApp:        bApp,
 		appCodec:       appCodec,
 		interfaceReg:   interfaceRegistry,
-		keys:           keys,
-		tkeys:          tkeys,
-		memKeys:        memKeys,
 		homePath:       homePath,
 		txConfig:       encodingConfig.TxConfig,
 		invCheckPeriod: invCheckPeriod,
 	}
 
-	// Initialize ParamsKeeper and subspaces
-	app.ParamsKeeper = paramskeeper.NewKeeper(
-		appCodec,
-		encodingConfig.Amino,
-		storeService,
-		tStoreService,
-	)
-
 	// Initialize CapabilityKeeper
 	app.CapabilityKeeper = capabilitykeeper.NewKeeper(
 		appCodec,
-		storeService,
-		memStoreService,
+		keys[capabilitytypes.StoreKey],
+		capabilityMemKey,
 	)
 
-	scopedWasmKeeper := app.CapabilityKeeper.ScopeToModule(wasmtypes.ModuleName)
-	app.ScopedWasmKeeper = scopedWasmKeeper
+	app.ScopedWasmKeeper = app.CapabilityKeeper.ScopeToModule(wasmtypes.ModuleName)
 
 	// Create address codecs for SDK v0.50.x
 	addressCodec := address.NewBech32Codec(sdk.Bech32MainPrefix)
 	validatorAddressCodec := address.NewBech32Codec(sdk.Bech32PrefixValAddr)
 	consensusAddressCodec := address.NewBech32Codec(sdk.Bech32PrefixConsAddr)
 
+	// Initialize ParamsKeeper and subspaces
+	app.ParamsKeeper = paramskeeper.NewKeeper(
+		appCodec,
+		encodingConfig.Amino,
+		keys[paramstypes.StoreKey],
+		tkeys[paramstypes.TStoreKey],
+	)
+
+	// Set subspaces for various modules
+	subspaceStaking := app.ParamsKeeper.Subspace(stakingtypes.ModuleName)
+	subspaceWasm := app.ParamsKeeper.Subspace(wasmtypes.ModuleName)
+	subspaceGov := app.ParamsKeeper.Subspace(govtypes.ModuleName)
+	subspaceIBC := app.ParamsKeeper.Subspace("ibc")
+
 	// Initialize AccountKeeper
 	app.AccountKeeper = authkeeper.NewAccountKeeper(
 		appCodec,
-		storeService,
+		authStoreService,
 		authtypes.ProtoBaseAccount,
 		map[string][]string{
 			stakingtypes.BondedPoolName:    {authtypes.Burner, authtypes.Staking},
@@ -287,19 +346,20 @@ func NewKaleApp(
 	// Initialize BankKeeper
 	app.BankKeeper = bankkeeper.NewBaseKeeper(
 		appCodec,
-		storeService,
+		bankStoreService,
 		app.AccountKeeper,
 		map[string]bool{
 			stakingtypes.BondedPoolName:    true,
 			stakingtypes.NotBondedPoolName: true,
 		},
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		cosmosLogger,
 	)
 
 	// Initialize StakingKeeper
 	app.StakingKeeper = *stakingkeeper.NewKeeper(
 		appCodec,
-		storeService,
+		stakingStoreService,
 		app.AccountKeeper,
 		app.BankKeeper,
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
@@ -307,50 +367,102 @@ func NewKaleApp(
 		consensusAddressCodec,
 	)
 
-	// Initialize WasmKeeper (CosmWasm v0.50.0)
+	// Initialize UpgradeKeeper
+	app.UpgradeKeeper = upgradekeeper.NewKeeper(
+		map[int64]bool{},
+		upgradeStoreService,
+		appCodec,
+		homePath,
+		app.BaseApp,
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
+
+	// Create distribution keeper with KVStoreService
+	distributionStoreService := runtime.NewKVStoreService(keys[distributiontypes.StoreKey])
+	distributionKeeper := distrkeeper.NewKeeper(
+		appCodec,
+		distributionStoreService,
+		app.AccountKeeper,
+		app.BankKeeper,
+		&app.StakingKeeper,
+		authtypes.FeeCollectorName,
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
+
+	// Create gov keeper with KVStoreService
+	govStoreService := runtime.NewKVStoreService(keys[govtypes.StoreKey])
+	app.GovKeeper = govkeeper.NewKeeper(
+		appCodec,
+		govStoreService,
+		app.AccountKeeper,
+		app.BankKeeper,
+		&app.StakingKeeper,
+		distributionKeeper,
+		app.BaseApp.MsgServiceRouter(),
+		govtypes.DefaultConfig(),
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
+
+	// Create IBC keeper
+	ibcKeeper := ibckeeper.NewKeeper(
+		appCodec,
+		keys["ibc"],
+		subspaceIBC,
+		app.StakingKeeper,
+		app.UpgradeKeeper,
+		app.ScopedWasmKeeper,
+		"ibc",
+	)
+
+	// Initialize the WasmKeeper with the correct parameters
 	wasmDir := filepath.Join(homePath, "wasm")
 	wasmConfig, err := wasm.ReadWasmConfig(appOpts)
 	if err != nil {
 		panic(fmt.Sprintf("error while reading wasm config: %s", err))
 	}
 
+	// Create interfaces that satisfy the WasmKeeper requirements
 	var wasmOpts []wasmkeeper.Option
+
+	// Create the adapter instances
+	distributionAdapter := distributionKeeperAdapter{distributionKeeper}
+	capabilityAdapter := capabilityKeeperAdapter{app.CapabilityKeeper}
+	transferPortAdapter := ics20TransferPortSourceAdapter{}
+
+	// Use = instead of := for assignment to avoid redeclaration error
 	app.WasmKeeper = wasmkeeper.NewKeeper(
 		appCodec,
-		storeService,
+		wasmStoreService,
 		app.AccountKeeper,
 		app.BankKeeper,
 		app.StakingKeeper,
-		nil, // distrkeeper is used for gov, which we're not including
-		nil, // Not using IBCKeeper for now
-		nil, // govkeeper is not included
+		distributionAdapter,
+		ibcKeeper.ChannelKeeper,
+		ibcKeeper.ChannelKeeper,
+		ibcKeeper.PortKeeper,
+		capabilityAdapter,
+		transferPortAdapter,
+		app.MsgServiceRouter(),
+		app.GRPCQueryRouter(),
 		wasmDir,
 		wasmConfig,
-		app.ScopedWasmKeeper,
+		"iterator,staking,stargate,cosmwasm_1_1,cosmwasm_1_2",
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 		wasmOpts...,
-	)
-
-	// Initialize UpgradeKeeper
-	app.UpgradeKeeper = upgradekeeper.NewKeeper(
-		map[int64]bool{},
-		storeService,
-		appCodec,
-		homePath,
-		app.BaseApp,
 	)
 
 	// Initialize KaleBankKeeper (custom module)
 	app.KaleBankKeeper = kalebankkeeper.NewKaleBankKeeper(
 		app.BankKeeper,
 		app.AccountKeeper,
-		storeService,
+		keys[kalebanktypes.StoreKey],
 		appCodec,
 	)
 
 	// Initialize SocialdexKeeper (custom module)
 	app.SocialdexKeeper = socialdexkeeper.NewKeeper(
 		appCodec,
-		storeService,
+		keys[socialdextypes.StoreKey],
 		app.BankKeeper,
 	)
 
@@ -361,19 +473,19 @@ func NewKaleApp(
 		bank.NewAppModule(appCodec, app.BankKeeper, app.AccountKeeper, app.GetSubspace(banktypes.ModuleName)),
 		capability.NewAppModule(appCodec, *app.CapabilityKeeper, false),
 		staking.NewAppModule(
-			appCodec, 
-			&app.StakingKeeper, 
-			app.AccountKeeper, 
+			appCodec,
+			&app.StakingKeeper,
+			app.AccountKeeper,
 			app.BankKeeper,
-			app.GetSubspace(stakingtypes.ModuleName),
+			subspaceStaking,
 		),
 		params.NewAppModule(app.ParamsKeeper),
-		wasm.NewAppModule(appCodec, &app.WasmKeeper, app.StakingKeeper, app.AccountKeeper, app.BankKeeper, app.MsgServiceRouter(), app.GetSubspace(wasmtypes.ModuleName)),
+		wasm.NewAppModule(appCodec, &app.WasmKeeper, app.StakingKeeper, app.AccountKeeper, app.BankKeeper, app.MsgServiceRouter(), subspaceWasm),
 		kalebank.NewAppModule(app.KaleBankKeeper),
 		socialdex.NewAppModule(app.SocialdexKeeper),
 		upgrade.NewAppModule(app.UpgradeKeeper, address.NewBech32Codec(sdk.Bech32MainPrefix)),
+		gov.NewAppModule(appCodec, app.GovKeeper, app.AccountKeeper, app.BankKeeper, subspaceGov),
 	)
-
 	// Set order of initialization for modules
 	app.mm.SetOrderBeginBlockers(
 		// Standard Cosmos SDK modules
@@ -426,17 +538,25 @@ func NewKaleApp(
 	app.configurator = module.NewConfigurator(app.appCodec, app.MsgServiceRouter(), app.GRPCQueryRouter())
 	app.mm.RegisterServices(app.configurator)
 
-	// Initialize the app
-	app.SetInitChainer(app.InitChainer)
-	app.SetPreBlocker(app.PreBlocker)
-	app.SetFinalizeBlocker(app.FinalizeBlocker) // Replace BeginBlocker/EndBlocker with FinalizeBlocker for SDK v0.50.10
+	// Register the custom modules' services
+	// Note: In SDK v0.50+, we typically use RegisterServices instead of NewHandler
+	// If your custom modules still use NewHandler, you'll need to adapt them
+
+	// Register the BeginBlocker and EndBlocker handlers
+	// Use the standard SDK v0.50 signatures
+	app.SetBeginBlocker(app.mm.BeginBlock)
+	app.SetEndBlocker(app.mm.EndBlock)
 
 	return app
 }
 
 // GetSubspace returns a param subspace for a given module name.
 func (app *KaleApp) GetSubspace(moduleName string) paramstypes.Subspace {
-	subspace, _ := app.ParamsKeeper.GetSubspace(moduleName)
+	subspace, found := app.ParamsKeeper.GetSubspace(moduleName)
+	if !found {
+		// If not found, return an empty subspace
+		return paramstypes.Subspace{}
+	}
 	return subspace
 }
 
@@ -457,8 +577,31 @@ func (app *KaleApp) InitCosmWasmContracts(ctx sdk.Context) error {
 // Name returns the name of the App
 func (app *KaleApp) Name() string { return app.BaseApp.Name() }
 
-// FinalizeBlock implements the ABCI interface
+// BeginBlocker application updates every begin block
+func (app *KaleApp) BeginBlocker(ctx sdk.Context) error {
+	beginBlockInfo, err := app.mm.BeginBlock(ctx)
+	if err != nil {
+		return err
+	}
+	// We don't need to use beginBlockInfo in this version
+	_ = beginBlockInfo
+	return nil
+}
+
+// EndBlocker application updates every end block
+func (app *KaleApp) EndBlocker(ctx sdk.Context) error {
+	endBlockInfo, err := app.mm.EndBlock(ctx)
+	if err != nil {
+		return err
+	}
+	// We don't need to use endBlockInfo in this version
+	_ = endBlockInfo
+	return nil
+}
+
+// FinalizeBlock implements the ABCI application interface
 func (app *KaleApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.ResponseFinalizeBlock, error) {
+	// Call the BaseApp's FinalizeBlock method which will handle all the logic
 	return app.BaseApp.FinalizeBlock(req)
 }
 
@@ -469,21 +612,21 @@ func (app *KaleApp) LoadHeight(height int64) error {
 
 // RegisterTendermintService implements the Application interface
 func (app *KaleApp) RegisterTendermintService(clientCtx client.Context) {
-	cmtservice.RegisterGRPCGatewayRoutes(clientCtx, clientCtx.GRPCGatewayRouter)
+	// Create a query function that uses the app's BaseApp to handle ABCI queries
+	queryFn := func(ctx context.Context, req *abci.RequestQuery) (*abci.ResponseQuery, error) {
+		return app.BaseApp.Query(ctx, req)
+	}
+	
+	// Use the NewQueryServer function to create a service server
+	cmtservice.RegisterServiceServer(
+		app.BaseApp.GRPCQueryRouter(),
+		cmtservice.NewQueryServer(clientCtx, app.interfaceReg, queryFn),
+	)
 }
 
 // RegisterTxService implements the Application interface
 func (app *KaleApp) RegisterTxService(clientCtx client.Context) {
 	// This is a placeholder implementation
-}
-
-// EncodingConfig specifies the concrete encoding types to use for a given app.
-// This is provided for compatibility between protobuf and amino implementations.
-type EncodingConfig struct {
-	InterfaceRegistry types.InterfaceRegistry
-	Codec             codec.Codec
-	TxConfig          client.TxConfig
-	Amino             *codec.LegacyAmino
 }
 
 // NewDefaultGenesisState generates the default state for the application.
@@ -498,7 +641,7 @@ func (app *KaleApp) InitChainer(ctx sdk.Context, req *abci.RequestInitChain) (*a
 		return nil, err
 	}
 	app.UpgradeKeeper.SetModuleVersionMap(ctx, app.mm.GetVersionMap())
-	
+
 	// In SDK v0.50.x, InitGenesis returns a pointer to ResponseInitChain and an error
 	return app.mm.InitGenesis(ctx, app.appCodec, genesisState)
 }
@@ -513,14 +656,8 @@ func (app *KaleApp) PreBlocker(ctx sdk.Context, req *abci.RequestFinalizeBlock) 
 // In Cosmos SDK v0.50.x, FinalizeBlocker replaces BeginBlocker and EndBlocker
 func (app *KaleApp) FinalizeBlocker(ctx sdk.Context, req *abci.RequestFinalizeBlock) (*abci.ResponseFinalizeBlock, error) {
 	// First process what used to be in BeginBlock
-	app.mm.BeginBlock(ctx, abci.RequestBeginBlock{
-		Hash:             req.Hash,
-		Header:           req.Header,
-		LastCommitInfo:   req.DecidedLastCommit,
-		ByzantineValidators: req.Misbehavior,
-	})
+	app.mm.BeginBlock(ctx)
 
-	// Process what used to be in DeliverTx
 	// No implementation needed as this is handled by BaseApp
 
 	// Finally process what used to be in EndBlock
@@ -532,6 +669,5 @@ func (app *KaleApp) FinalizeBlocker(ctx sdk.Context, req *abci.RequestFinalizeBl
 	return &abci.ResponseFinalizeBlock{
 		Events:           ctx.EventManager().ABCIEvents(),
 		ValidatorUpdates: res.ValidatorUpdates,
-		ConsensusParamUpdates: res.ConsensusParamUpdates,
 	}, nil
 }

@@ -1,0 +1,87 @@
+# Ignore docs directory
+/docs/
+
+# Ignore config directory
+/config/
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment variables and secrets
+.env
+.env.*
+*.env
+env/
+.secret
+secrets/
+credentials/
+*_key
+*_keys
+*_secret
+*_token
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Local configuration files that might contain sensitive data
+*.local.json
+*.local.yaml
+*.local.yml
+*.local.toml
+*-local.*
+local.*
+
+# Logs that might contain sensitive data
+*.log
+logs/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*~
+*.backup
+*.swp
+
+# Cosmos SDK specific
+node_key.json
+priv_validator_key.json
