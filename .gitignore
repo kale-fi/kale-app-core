@@ -85,3 +85,7 @@ logs/
 # Cosmos SDK specific
 node_key.json
 priv_validator_key.json
+
+# Large binary files exceeding GitHub limits
+standalone
+kalefid
